@@ -43,7 +43,16 @@ In all three cases, never silently proceed to write/commit against the wrong bra
 
 ## Per-PR state
 
-The ledger lives at `<repo>/.pr-review/pr-<n>.yaml`, committed to the PR branch. On first invocation it's empty. On subsequent invocations, load it and use it as both (a) the suppression context for reviewers and (b) the few-shot calibration for the judge.
+The ledger lives at `<repo>/.pr-review/pr-<n>.yaml`. It is a **local-only artifact — never committed**. On first invocation it's empty. On subsequent invocations, load it and use it as both (a) the suppression context for reviewers and (b) the few-shot calibration for the judge.
+
+**Keep it out of the repo (REQUIRED at startup).** Before writing any ledger, ensure `.pr-review/` is gitignored in the target repo so review bookkeeping never lands in the feature branch's history and `git add` / `git status` stay clean. Idempotent:
+
+```bash
+grep -qxF '.pr-review/' "$(git rev-parse --show-toplevel)/.gitignore" 2>/dev/null \
+  || printf '\n# pr-review-until-converged ledger (local only)\n.pr-review/\n' >> "$(git rev-parse --show-toplevel)/.gitignore"
+```
+
+Persistence is therefore per-working-tree: the ledger survives across rounds and re-invocations *in this checkout*, but a fresh clone or another machine starts with an empty ledger. To carry a decision across machines, set `decided_by: human` and copy the entry by hand — that's the intended override channel.
 
 Ledger entry shape:
 ```yaml
@@ -255,7 +264,7 @@ fix(review): <ledger-id-1>, <ledger-id-2> — <one-line summary>
 
 ### 7. Push and loop
 
-`git push` after committing. Update `previous_blockers`. Save ledger. Continue to next round.
+`git push` after committing the fixes. Update `previous_blockers`. Save the ledger to disk (it's gitignored — never staged, committed, or pushed). Continue to next round.
 
 ## Exit reports
 
@@ -270,7 +279,7 @@ Nits (not blocking):
 - <id>: <summary> [minor-nit]
 ...
 
-Ledger: .pr-review/pr-<n>.yaml — committed to this branch.
+Ledger: .pr-review/pr-<n>.yaml — local only (gitignored, not committed).
 ```
 
 **NEEDS HUMAN**:
@@ -284,8 +293,8 @@ Persistent blockers (need your attention):
   Last rationale: <judge rationale>
 ...
 
-Ledger: .pr-review/pr-<n>.yaml — committed to this branch. Edit the ledger
-to override decisions (set decided_by: human) and re-invoke to resume.
+Ledger: .pr-review/pr-<n>.yaml — local only (gitignored, not committed). Edit
+the ledger to override decisions (set decided_by: human) and re-invoke to resume.
 ```
 
 **Review-only mode exit** (PR not on current branch, no fix step run):
